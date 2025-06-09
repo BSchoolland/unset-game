@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sphere Game</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: #000;
+            font-family: 'Arial', sans-serif;
+            overflow: hidden;
+        }
+
+        #container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        #ui {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            z-index: 100;
+            color: white;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 20px;
+            border-radius: 10px;
+            max-width: 300px;
+            backdrop-filter: blur(10px);
+        }
+
+        #controls {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            z-index: 100;
+            color: white;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 20px;
+            border-radius: 10px;
+            backdrop-filter: blur(10px);
+        }
+
+        .button {
+            background: #4CAF50;
+            border: none;
+            color: white;
+            padding: 10px 20px;
+            text-align: center;
+            text-decoration: none;
+            display: inline-block;
+            font-size: 14px;
+            margin: 4px 2px;
+            cursor: pointer;
+            border-radius: 5px;
+            transition: background-color 0.3s;
+        }
+
+        .button:hover {
+            background: #45a049;
+        }
+
+        .button:disabled {
+            background: #666;
+            cursor: not-allowed;
+        }
+
+        .node-info {
+            margin: 10px 0;
+            padding: 10px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 5px;
+        }
+
+        .player-info {
+            margin: 10px 0;
+            padding: 10px;
+            background: rgba(0, 100, 255, 0.2);
+            border-radius: 5px;
+            border: 1px solid rgba(0, 100, 255, 0.5);
+        }
+
+        .connection-line {
+            stroke: #00ff00;
+            stroke-width: 2;
+            opacity: 0.6;
+        }
+
+        .reachable-line {
+            stroke: #ffff00;
+            stroke-width: 3;
+            opacity: 0.8;
+        }
+
+        .path-line {
+            stroke: #ff0000;
+            stroke-width: 4;
+            opacity: 1.0;
+        }
+
+        #loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            font-size: 24px;
+            z-index: 200;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        select, input {
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            color: white;
+            padding: 5px;
+            border-radius: 3px;
+            margin: 5px 0;
+        }
+
+        select option {
+            background: #333;
+            color: white;
+        }
+
+        .status {
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 5px;
+        }
+
+        .status.success {
+            background: rgba(76, 175, 80, 0.2);
+            border: 1px solid rgba(76, 175, 80, 0.5);
+        }
+
+        .status.error {
+            background: rgba(244, 67, 54, 0.2);
+            border: 1px solid rgba(244, 67, 54, 0.5);
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <div id="loading">Loading Sphere Game...</div>
+        
+        <div id="ui" class="hidden">
+            <h2>Sphere Game</h2>
+            
+            <div class="player-info">
+                <h3>Player Status</h3>
+                <div id="player-status">No player created</div>
+                <button id="create-player-btn" class="button">Create Player</button>
+            </div>
+
+            <div class="node-info">
+                <h3>Selected Node</h3>
+                <div id="selected-node-info">Click on a node to select it</div>
+            </div>
+
+            <div class="node-info">
+                <h3>Network Stats</h3>
+                <div id="network-stats">Loading...</div>
+            </div>
+        </div>
+
+        <div id="controls" class="hidden">
+            <h3>Controls</h3>
+            
+            <div>
+                <label>Movement Speed:</label>
+                <input type="range" id="speed-slider" min="0.5" max="5" step="0.5" value="1">
+                <span id="speed-value">1.0</span>
+            </div>
+
+            <div>
+                <button id="show-connections-btn" class="button">Toggle Connections</button>
+                <button id="show-reachable-btn" class="button">Show Reachable</button>
+                <button id="find-path-btn" class="button" disabled>Find Path</button>
+            </div>
+
+            <div>
+                <button id="move-player-btn" class="button" disabled>Move Player</button>
+                <button id="reset-view-btn" class="button">Reset View</button>
+            </div>
+
+            <div id="status-messages"></div>
+        </div>
+    </div>
+
+    <!-- Three.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+
+    <script src="js/game.js"></script>
+</body>
+</html> 
