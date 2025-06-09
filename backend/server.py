@@ -15,6 +15,7 @@ import sys
 # Add the game module to the path
 sys.path.append(os.path.join(os.path.dirname(__file__), 'game'))
 
+from game.generate_network import generate_network
 from game.geoLocation import GeoLocation
 from game.node import Node, NodeNetwork
 
@@ -136,40 +137,28 @@ class Player:
 
 # Initialize with some sample data
 def initialize_sample_data():
-    """Create some sample nodes and connections for demonstration."""
-    # Create sample locations
-    locations = [
-        (GeoLocation(0, 0), "Origin", {"type": "city", "population": 1000}),
-        (GeoLocation(0, 30), "Eastern Port", {"type": "port", "population": 500}),
-        (GeoLocation(30, 0), "Northern Outpost", {"type": "outpost", "population": 200}),
-        (GeoLocation(30, 30), "Mountain Base", {"type": "base", "population": 300}),
-        (GeoLocation(15, 15), "Central Hub", {"type": "hub", "population": 800}),
-        (GeoLocation(-15, 15), "Western Fort", {"type": "fort", "population": 400}),
-        (GeoLocation(45, 15), "Distant Colony", {"type": "colony", "population": 600}),
-    ]
+    """Create an equatorial network for demonstration."""
+    # Use the equatorial generator to create a realistic network
     
-    nodes = {}
-    for location, name, properties in locations:
-        node = Node(location, name)
-        for key, value in properties.items():
-            node.set_property(key, value)
-        game_network.add_node(node)
-        nodes[name] = node
+    network = generate_network(65, 30.0, 20.0, 0.5, 0.5)
     
-    # Create connections
-    connections = [
-        ("Origin", "Eastern Port"),
-        ("Origin", "Northern Outpost"),
-        ("Origin", "Central Hub"),
-        ("Eastern Port", "Mountain Base"),
-        ("Northern Outpost", "Mountain Base"),
-        ("Central Hub", "Mountain Base"),
-        ("Central Hub", "Western Fort"),
-        ("Mountain Base", "Distant Colony"),
-    ]
+    # Replace the global network
+    global game_network
+    game_network = network
     
-    for start_name, end_name in connections:
-        nodes[start_name].connect_to(nodes[end_name])
+    print(f"Initialized equatorial network with {len(network.get_all_nodes())} nodes")
+    
+    # Add some properties to nodes for variety
+    nodes = network.get_all_nodes()
+    node_types = ["city", "port", "outpost", "base", "hub", "fort", "colony", "station"]
+    
+    for i, node in enumerate(nodes):
+        node_type = node_types[i % len(node_types)]
+        population = 200 + (i * 50) % 800  # Vary population
+        
+        node.set_property("type", node_type)
+        node.set_property("population", population)
+        node.set_property("resources", ["water", "food"][i % 2])  # Alternate resources
 
 # Initialize sample data on startup
 initialize_sample_data()
@@ -391,5 +380,77 @@ async def get_network_stats():
     """Get network statistics."""
     return game_network.get_network_stats()
 
+# Equatorial generator endpoints
+@app.post("/network/generate-equatorial")
+async def generate_equatorial_network(config):
+    """Generate a new equatorial network with specified parameters."""
+    global game_network, players
+    
+    try:
+        new_network = generate_network(config.num_nodes, config.equator_band_degrees, config.max_distance, config.deviation_bias, config.connection_bias)
+    
+        
+        return {
+            "message": "Equatorial network generated successfully",
+            "nodes_generated": len(new_network.get_all_nodes()),
+            "total_nodes": len(game_network.get_all_nodes()),
+            "replaced_network": config.replace_current
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to generate network: {str(e)}")
+
+@app.get("/network/equatorial-preview")
+async def preview_equatorial_network(
+    num_nodes: int = 30,
+    equator_band_degrees: float = 30.0,
+    min_distance: float = 5.0,
+    max_distance: float = 10.0,
+    seed: Optional[int] = None
+):
+    """Preview an equatorial network without adding it to the game."""
+    try:
+        generator = EquatorialNodeGenerator(
+            equator_band_degrees=equator_band_degrees,
+            min_distance=min_distance,
+            max_distance=max_distance
+        )
+        
+        preview_network = generator.generate_equatorial_network(
+            num_nodes=num_nodes,
+            seed=seed
+        )
+        
+        # Get network statistics
+        stats = preview_network.get_network_stats()
+        
+        # Get all nodes for preview
+        nodes = [node_to_dict(node) for node in preview_network.get_all_nodes()]
+        
+        return {
+            "preview_nodes": nodes,
+            "network_stats": stats,
+            "generation_params": {
+                "num_nodes": num_nodes,
+                "equator_band_degrees": equator_band_degrees,
+                "min_distance": min_distance,
+                "max_distance": max_distance,
+                "seed": seed
+            }
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to preview network: {str(e)}")
+
+@app.delete("/network/clear")
+async def clear_network():
+    """Clear all nodes and players from the network."""
+    global game_network, players
+    
+    game_network = NodeNetwork()
+    players.clear()
+    
+    return {"message": "Network cleared successfully"}
+
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("server:app", host="0.0.0.0", port=8000, reload=True)

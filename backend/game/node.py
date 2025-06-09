@@ -34,14 +34,14 @@ class Node:
         # Optional properties for game mechanics
         self.properties: Dict[str, any] = {}
     
-    def connect_to(self, other_node: 'Node', bidirectional: bool = True) -> bool:
+    def connect_to(self, other_node: 'Node', bidirectional: bool = True, locked: bool = False) -> bool:
         """
         Create a connection to another node.
         
         Args:
             other_node: The node to connect to
             bidirectional: If True, creates connection in both directions
-            
+            locked: If True, connection cannot be removed unless disconnected with force
         Returns:
             True if connection was created, False if already exists
         """
@@ -55,14 +55,14 @@ class Node:
         
         return True
     
-    def disconnect_from(self, other_node: 'Node', bidirectional: bool = True) -> bool:
+    def disconnect_from(self, other_node: 'Node', bidirectional: bool = True, force: bool = False) -> bool:
         """
         Remove a connection to another node.
         
         Args:
             other_node: The node to disconnect from
             bidirectional: If True, removes connection in both directions
-            
+            force: If True, removes connection regardless of locked status
         Returns:
             True if connection was removed, False if didn't exist
         """
@@ -241,6 +241,13 @@ class Node:
             Property value or default
         """
         return self.properties.get(key, default)
+    
+    def translate(self, x: float, y: float) -> None:
+        """
+        Translate the node by a certain amount in degrees.
+        """
+        self.location.translate(x, y)
+        
     
     def __str__(self) -> str:
         """String representation of the node."""
