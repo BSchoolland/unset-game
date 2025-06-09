@@ -31,6 +31,9 @@ class Node:
         # Dictionary of connected nodes: {node_id: Node}
         self.connections: Dict[str, 'Node'] = {}
         
+        # Set of locked connection IDs that cannot be disconnected without force
+        self.locked_connections: Set[str] = set()
+        
         # Optional properties for game mechanics
         self.properties: Dict[str, any] = {}
     
@@ -50,8 +53,13 @@ class Node:
         
         self.connections[other_node.id] = other_node
         
+        if locked:
+            self.locked_connections.add(other_node.id)
+        
         if bidirectional and self.id not in other_node.connections:
             other_node.connections[self.id] = self
+            if locked:
+                other_node.locked_connections.add(self.id)
         
         return True
     
@@ -68,6 +76,9 @@ class Node:
         """
         if other_node.id not in self.connections:
             return False  # Connection doesn't exist
+        
+        if not force and other_node.id in self.locked_connections:
+            return False  # Connection is locked, cannot disconnect without force
         
         del self.connections[other_node.id]
         
@@ -266,6 +277,18 @@ class Node:
     def __hash__(self) -> int:
         """Hash based on node ID for use in sets and dictionaries."""
         return hash(self.id)
+
+    def is_connection_locked(self, other_node: 'Node') -> bool:
+        """
+        Check if the connection to another node is locked.
+        
+        Args:
+            other_node: The node to check the connection lock status for
+            
+        Returns:
+            True if the connection is locked, False otherwise
+        """
+        return other_node.id in self.locked_connections
 
 
 class NodeNetwork:

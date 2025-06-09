@@ -140,7 +140,7 @@ def initialize_sample_data():
     """Create an equatorial network for demonstration."""
     # Use the equatorial generator to create a realistic network
     
-    network = generate_network(65, 30.0, 20.0, 0.5, 0.5)
+    network = generate_network(60, 30.0, 20.0, 0.5, 0.5)
     
     # Replace the global network
     global game_network

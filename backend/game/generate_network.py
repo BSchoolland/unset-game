@@ -46,7 +46,7 @@ def generate_network(num_nodes, equator_band_degrees, max_distance, deviation_bi
     network = random_pull_nodes(network, max_distance)
 
     # step 6: thin connections
-    network = thin_connections(network, 3)
+    network = thin_connections(network, 4)
 
     # step 7 reconnect orphaned nodes
     network = reconnect_orphaned_nodes(network, max_distance)
@@ -256,16 +256,28 @@ def thin_connections(network, max_connections):
         num_connections = len(node.get_connected_nodes())
         if num_connections > max_connections:
             while num_connections > max_connections:
-                # disconnect the furthest connection until num_connections is 3
+                # Find the furthest connection that is NOT locked
                 furthest_connection = None
                 furthest_distance = 0
                 for connection in node.get_connected_nodes():
-                    if node.get_distance_to(connection) > furthest_distance:
-                        furthest_distance = node.get_distance_to(connection)
-                        furthest_connection = connection
+                    # Only consider non-locked connections for removal
+                    if not node.is_connection_locked(connection):
+                        distance = node.get_distance_to(connection)
+                        if distance > furthest_distance:
+                            furthest_distance = distance
+                            furthest_connection = connection
+                
+                # If we found a non-locked connection to remove, disconnect it
                 if furthest_connection:
-                    node.disconnect_from(furthest_connection)
-                num_connections = len(node.get_connected_nodes())
+                    success = node.disconnect_from(furthest_connection)
+                    if success:
+                        num_connections = len(node.get_connected_nodes())
+                    else:
+                        # If disconnect failed for some reason, break to avoid infinite loop
+                        break
+                else:
+                    # No non-locked connections available to remove, break the loop
+                    break
     return network
 
 # step 7: reconnect orphaned nodes
@@ -273,9 +285,11 @@ def reconnect_orphaned_nodes(network, max_distance):
     for node in network.get_all_nodes():
         # if unable to path to the first node, connect to all nodes it can
         if not node.find_path_to(network.get_all_nodes()[0]):
-            for other_node in network.get_all_nodes():
-                if node.get_distance_to(other_node) <= max_distance * 1.1 and not node.is_connected_to(other_node):
-                    node.connect_to(other_node)
+            print('reconnecting orphaned node', node.name)
+            while not node.find_path_to(network.get_all_nodes()[0]):
+                for other_node in network.get_all_nodes():
+                    if node.get_distance_to(other_node) <= max_distance * 1.1 and not node.is_connected_to(other_node):
+                        node.connect_to(other_node)
     return network
 
 
