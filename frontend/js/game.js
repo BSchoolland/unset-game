@@ -22,6 +22,12 @@ class SphereGame {
         this.showConnections = true;
         this.speed = 1.0;
         
+        // New atmospheric elements
+        this.dustClouds = [];
+        this.moon = null;
+        this.moonOrbitAngle = 0;
+        this.sunOrbitAngle = 0;
+        
         // API base URL
         this.apiUrl = 'http://localhost:8000';
         
@@ -44,7 +50,7 @@ class SphereGame {
     setupThreeJS() {
         // Scene
         this.scene = new THREE.Scene();
-        this.scene.background = new THREE.Color(0x000011);
+        this.scene.background = new THREE.Color(0x2a1810); // Dark desert sky
 
         // Camera
         this.camera = new THREE.PerspectiveCamera(
@@ -69,16 +75,36 @@ class SphereGame {
         this.controls.minDistance = 1.5;
         this.controls.maxDistance = 10;
 
-        // Lighting
-        const ambientLight = new THREE.AmbientLight(0x404040, 0.4);
+        // Lighting - warm desert lighting
+        const ambientLight = new THREE.AmbientLight(0x6B4423, 0.3); // Warm ambient
         this.scene.add(ambientLight);
 
-        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
-        directionalLight.position.set(5, 5, 5);
-        directionalLight.castShadow = true;
-        directionalLight.shadow.mapSize.width = 2048;
-        directionalLight.shadow.mapSize.height = 2048;
-        this.scene.add(directionalLight);
+        // Add subtle blue ambient light for nighttime
+        const nightAmbientLight = new THREE.AmbientLight(0x4169E1, 0.45); // Blue ambient for night
+        this.scene.add(nightAmbientLight);
+
+        this.directionalLight = new THREE.DirectionalLight(0xFFB366, 1.2); // Orange sun
+        this.directionalLight.position.set(15, 0, 0); // Position along equator (Y=0)
+        this.directionalLight.castShadow = true;
+        this.directionalLight.shadow.mapSize.width = 2048;
+        this.directionalLight.shadow.mapSize.height = 2048;
+        this.scene.add(this.directionalLight);
+
+        // Create visual sun object
+        const sunGeometry = new THREE.SphereGeometry(0.2, 16, 8);
+        const sunMaterial = new THREE.MeshBasicMaterial({
+            color: 0xFFB366,
+            emissive: 0xFFB366,
+            emissiveIntensity: 1.0
+        });
+        this.sun = new THREE.Mesh(sunGeometry, sunMaterial);
+        this.sun.position.copy(this.directionalLight.position);
+        this.scene.add(this.sun);
+
+        // Add secondary light for sci-fi effect
+        const blueLight = new THREE.PointLight(0x00BFFF, 0.4, 10);
+        blueLight.position.set(-3, 2, 4);
+        this.scene.add(blueLight);
 
         // Create sphere
         this.createSphere();
@@ -88,14 +114,30 @@ class SphereGame {
 
         // Mouse interaction
         this.setupMouseInteraction();
+
+        // Create starfield
+        this.createStarfield();
     }
 
     createSphere() {
+        // Desert planet base with noise
         const geometry = new THREE.SphereGeometry(1, 64, 32);
+        
+        // Add noise to vertices for rougher surface
+        const positions = geometry.attributes.position;
+        for (let i = 0; i < positions.count; i++) {
+            const vertex = new THREE.Vector3().fromBufferAttribute(positions, i);
+            const noise = (Math.random() - 0.5) * 0.02;
+            vertex.normalize().multiplyScalar(1 + noise);
+            positions.setXYZ(i, vertex.x, vertex.y, vertex.z);
+        }
+        geometry.computeVertexNormals();
+        
         const material = new THREE.MeshPhongMaterial({
-            color: 0x2194ce,
-            transparent: true,
-            opacity: 0.8,
+            color: 0xD2691E, // Sandy brown
+            transparent: false,
+            opacity: 1.0,
+            roughness: 0.8,
             wireframe: false
         });
         
@@ -103,16 +145,212 @@ class SphereGame {
         this.sphere.receiveShadow = true;
         this.scene.add(this.sphere);
 
-        // Add wireframe overlay
-        const wireframeGeometry = new THREE.SphereGeometry(1.001, 32, 16);
-        const wireframeMaterial = new THREE.MeshBasicMaterial({
-            color: 0x444444,
-            wireframe: true,
+        // Add rocky texture layer
+        const textureGeometry = new THREE.SphereGeometry(1.002, 64, 32);
+        const rockMaterial = new THREE.MeshPhongMaterial({
+            color: 0x8B4513, // Saddle brown for rocks
             transparent: true,
-            opacity: 0.3
+            opacity: 0.4
         });
-        const wireframe = new THREE.Mesh(wireframeGeometry, wireframeMaterial);
-        this.scene.add(wireframe);
+        const rockLayer = new THREE.Mesh(textureGeometry, rockMaterial);
+        this.scene.add(rockLayer);
+
+        // Add mountains/rocks randomly distributed
+        for (let i = 0; i < 20; i++) {
+            const lat = (Math.random() - 0.5) * 180;
+            const lon = (Math.random() - 0.5) * 360;
+            const pos = this.latLonToVector3(lat, lon);
+            
+            const rockGeometry = new THREE.ConeGeometry(0.02 + Math.random() * 0.03, 0.05 + Math.random() * 0.1, 6);
+            const rockMaterial = new THREE.MeshPhongMaterial({
+                color: new THREE.Color().setHSL(0.08, 0.3 + Math.random() * 0.3, 0.2 + Math.random() * 0.3)
+            });
+            const rock = new THREE.Mesh(rockGeometry, rockMaterial);
+            rock.position.copy(pos.multiplyScalar(1.01 + Math.random() * 0.02));
+            
+            // Fix rotation: point rocks outward from planet center (local up vector)
+            const localUp = rock.position.clone().normalize();
+            const quaternion = new THREE.Quaternion();
+            quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), localUp);
+            rock.setRotationFromQuaternion(quaternion);
+            
+            rock.castShadow = true;
+            this.scene.add(rock);
+        }
+
+        // Add wider, shorter mountains
+        for (let i = 0; i < 150; i++) {
+            const lat = (Math.random() - 0.5) * 180;
+            const lon = (Math.random() - 0.5) * 360;
+            const pos = this.latLonToVector3(lat, lon);
+            
+            const mountainGeometry = new THREE.ConeGeometry(0.06 + Math.random() * 0.08, 0.03 + Math.random() * 0.04, 8);
+            const mountainMaterial = new THREE.MeshPhongMaterial({
+                color: new THREE.Color().setHSL(0.06, 0.4 + Math.random() * 0.2, 0.25 + Math.random() * 0.15)
+            });
+            const mountain = new THREE.Mesh(mountainGeometry, mountainMaterial);
+            mountain.position.copy(pos.multiplyScalar(1.01 + Math.random() * 0.015));
+            
+            // Fix rotation: point mountains outward from planet center
+            const localUp = mountain.position.clone().normalize();
+            const quaternion = new THREE.Quaternion();
+            quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), localUp);
+            mountain.setRotationFromQuaternion(quaternion);
+            
+            mountain.castShadow = true;
+            this.scene.add(mountain);
+        }
+
+        // Create dust clouds that move across the planet's surface
+        this.createDustClouds();
+        
+        // Create orbiting forest green moon
+        this.createMoon();
+    }
+
+    createDustClouds() {
+        // Create several dust cloud systems
+        for (let i = 0; i < 8; i++) {
+            const dustGroup = new THREE.Group();
+            
+            // Position the dust cloud on the planet surface first
+            const lat = (Math.random() - 0.5) * 180;
+            const lon = (Math.random() - 0.5) * 360;
+            const pos = this.latLonToVector3(lat, lon);
+            dustGroup.position.copy(pos.multiplyScalar(1.01)); // Slightly above surface
+            
+            // Create multiple particles for each dust cloud
+            for (let j = 0; j < 20; j++) {
+                const dustGeometry = new THREE.PlaneGeometry(0.05 + Math.random() * 0.1, 0.04 + Math.random() * 0.01);
+                const dustMaterial = new THREE.MeshBasicMaterial({
+                    color: new THREE.Color().setHSL(0.08, 0.4, 0.3 + Math.random() * 0.2), // Much darker sandy dust color
+                    transparent: true,
+                    opacity: 0.2 + Math.random() * 0.15,
+                    side: THREE.DoubleSide
+                });
+                
+                const dustParticle = new THREE.Mesh(dustGeometry, dustMaterial);
+                
+                // Position particles in a loose cloud formation
+                const offsetX = (Math.random() - 0.5) * 0.3;
+                const offsetY = (Math.random() - 0.5) * 0.1;
+                const offsetZ = (Math.random() - 0.5) * 0.3;
+                dustParticle.position.set(offsetX, offsetY, offsetZ);
+                
+                // Orient each particle to face outward from planet like mountains
+                const particleWorldPos = dustGroup.position.clone().add(dustParticle.position);
+                const localUp = particleWorldPos.normalize();
+                const quaternion = new THREE.Quaternion();
+                quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), localUp);
+                dustParticle.setRotationFromQuaternion(quaternion);
+                
+                dustGroup.add(dustParticle);
+            }
+            
+            // Store movement properties - much slower
+            dustGroup.userData = {
+                orbitSpeed: 0.0001 + Math.random() * 0.0005, // 10x slower movement
+                orbitAxis: new THREE.Vector3(
+                    (Math.random() - 0.5) * 2,
+                    (Math.random() - 0.5) * 2,
+                    (Math.random() - 0.5) * 2
+                ).normalize(),
+                orbitRadius: 1.08
+            };
+            
+            this.dustClouds.push(dustGroup);
+            this.scene.add(dustGroup);
+        }
+    }
+
+    createMoon() {
+        // Create forest green moon with texture
+        const moonGeometry = new THREE.SphereGeometry(0.15, 32, 16);
+        
+        // Create canvas texture for forest-like appearance
+        const canvas = document.createElement('canvas');
+        canvas.width = 256;
+        canvas.height = 256;
+        const context = canvas.getContext('2d');
+        
+        // Base forest green color
+        context.fillStyle = '#228B22';
+        context.fillRect(0, 0, 256, 256);
+        
+        // Add darker green patches for forest variation
+        for (let i = 0; i < 50; i++) {
+            const x = Math.random() * 256;
+            const y = Math.random() * 256;
+            const size = 10 + Math.random() * 20;
+            context.fillStyle = `hsl(120, ${40 + Math.random() * 30}%, ${15 + Math.random() * 15}%)`;
+            context.beginPath();
+            context.arc(x, y, size, 0, 2 * Math.PI);
+            context.fill();
+        }
+        
+        // Add lighter green highlights
+        for (let i = 0; i < 30; i++) {
+            const x = Math.random() * 256;
+            const y = Math.random() * 256;
+            const size = 5 + Math.random() * 10;
+            context.fillStyle = `hsl(120, ${30 + Math.random() * 20}%, ${35 + Math.random() * 10}%)`;
+            context.beginPath();
+            context.arc(x, y, size, 0, 2 * Math.PI);
+            context.fill();
+        }
+        
+        const moonTexture = new THREE.CanvasTexture(canvas);
+        const moonMaterial = new THREE.MeshPhongMaterial({
+            map: moonTexture,
+            color: 0x228B22, // Forest green
+            shininess: 30
+        });
+        
+        this.moon = new THREE.Mesh(moonGeometry, moonMaterial);
+        this.moon.castShadow = true;
+        this.moon.receiveShadow = true;
+        
+        // Start moon at distance of 5 units from planet center
+        this.moon.position.set(5, 0, 0);
+        this.scene.add(this.moon);
+    }
+
+    createStarfield() {
+        // Create a large sphere for the starfield background
+        const starfieldGeometry = new THREE.SphereGeometry(500, 64, 32);
+        
+        // Create high-resolution canvas texture for sharp stars
+        const canvas = document.createElement('canvas');
+        canvas.width = 2048;
+        canvas.height = 1024;
+        const context = canvas.getContext('2d');
+        
+        // Disable smoothing for crisp pixels
+        context.imageSmoothingEnabled = false;
+        
+        // Pure black space background
+        context.fillStyle = '#000000';
+        context.fillRect(0, 0, canvas.width, canvas.height);
+        
+        // Add tiny sharp white star points
+        context.fillStyle = '#FFFFFF';
+        for (let i = 0; i < 5000; i++) {
+            const x = Math.floor(Math.random() * canvas.width);
+            const y = Math.floor(Math.random() * canvas.height);
+            context.fillRect(x, y, 1, 1); // Single pixel stars
+        }
+        
+        const starTexture = new THREE.CanvasTexture(canvas);
+        starTexture.magFilter = THREE.NearestFilter; // Sharp pixel filtering
+        starTexture.minFilter = THREE.NearestFilter;
+        
+        const starfieldMaterial = new THREE.MeshBasicMaterial({
+            map: starTexture,
+            side: THREE.BackSide // Render on inside of sphere
+        });
+        
+        const starfield = new THREE.Mesh(starfieldGeometry, starfieldMaterial);
+        this.scene.add(starfield);
     }
 
     setupMouseInteraction() {
@@ -191,38 +429,78 @@ class SphereGame {
         this.nodes.forEach(node => {
             const position = this.latLonToVector3(node.location.latitude, node.location.longitude);
             
-            // Create node mesh
-            const geometry = new THREE.SphereGeometry(0.03, 16, 8);
-            const material = new THREE.MeshPhongMaterial({
-                color: this.getNodeColor(node),
-                emissive: 0x222222
-            });
-            const mesh = new THREE.Mesh(geometry, material);
-            mesh.position.copy(position);
-            mesh.castShadow = true;
-            this.scene.add(mesh);
-
-            // Create label
-            const labelGeometry = new THREE.PlaneGeometry(0.2, 0.05);
+            // Create flat circular icon based on node type
+            const type = node.properties.type || 'default';
+            const iconRadius = 0.04;
+            
+            // Create a circular plane geometry for the icon
+            const geometry = new THREE.CircleGeometry(iconRadius, 16);
+            
+            // Create canvas for the icon
             const canvas = document.createElement('canvas');
-            canvas.width = 256;
-            canvas.height = 64;
+            canvas.width = 128;
+            canvas.height = 128;
             const context = canvas.getContext('2d');
-            context.fillStyle = 'rgba(0, 0, 0, 0.8)';
-            context.fillRect(0, 0, 256, 64);
+            
+            // Draw icon background circle
+            context.fillStyle = this.getIconColor(type);
+            context.beginPath();
+            context.arc(64, 64, 60, 0, 2 * Math.PI);
+            context.fill();
+            
+            // Draw border
+            context.strokeStyle = 'white';
+            context.lineWidth = 4;
+            context.stroke();
+            
+            // Draw icon symbol
             context.fillStyle = 'white';
-            context.font = '16px Arial';
+            context.font = 'bold 40px Arial';
             context.textAlign = 'center';
-            context.fillText(node.name, 128, 40);
+            context.textBaseline = 'middle';
+            context.fillText(this.getIconSymbol(type), 64, 64);
             
             const texture = new THREE.CanvasTexture(canvas);
-            const labelMaterial = new THREE.MeshBasicMaterial({
+            const material = new THREE.MeshBasicMaterial({
                 map: texture,
-                transparent: true
+                transparent: true,
+                side: THREE.DoubleSide
+            });
+            
+            const mesh = new THREE.Mesh(geometry, material);
+            mesh.position.copy(position);
+            mesh.position.multiplyScalar(1.02);
+            
+            // Make icon face outward from planet
+            const localUp = mesh.position.clone().normalize();
+            const quaternion = new THREE.Quaternion();
+            quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), localUp);
+            mesh.setRotationFromQuaternion(quaternion);
+            
+            this.scene.add(mesh);
+
+            // Create floating holographic label (hidden by default)
+            const labelGeometry = new THREE.PlaneGeometry(0.15, 0.04);
+            const labelCanvas = document.createElement('canvas');
+            labelCanvas.width = 256;
+            labelCanvas.height = 64;
+            const labelContext = labelCanvas.getContext('2d');
+            labelContext.fillStyle = 'rgba(0, 150, 255, 0.8)';
+            labelContext.fillRect(0, 0, 256, 64);
+            labelContext.fillStyle = 'cyan';
+            labelContext.font = 'bold 14px monospace';
+            labelContext.textAlign = 'center';
+            labelContext.fillText(node.name, 128, 40);
+            
+            const labelTexture = new THREE.CanvasTexture(labelCanvas);
+            const labelMaterial = new THREE.MeshBasicMaterial({
+                map: labelTexture,
+                transparent: true,
+                opacity: 0 // Hidden by default
             });
             const label = new THREE.Mesh(labelGeometry, labelMaterial);
             label.position.copy(position);
-            label.position.multiplyScalar(1.1);
+            label.position.multiplyScalar(1.15);
             label.lookAt(this.camera.position);
             this.scene.add(label);
 
@@ -243,6 +521,34 @@ class SphereGame {
             'default': 0xffffff
         };
         return colors[type] || colors.default;
+    }
+
+    getIconColor(type) {
+        const colors = {
+            'city': '#ff6b6b',
+            'port': '#4ecdc4',
+            'outpost': '#45b7d1',
+            'base': '#96ceb4',
+            'hub': '#ffeaa7',
+            'fort': '#dda0dd',
+            'colony': '#98d8c8',
+            'default': '#ffffff'
+        };
+        return colors[type] || colors.default;
+    }
+
+    getIconSymbol(type) {
+        const symbols = {
+            'city': '◈', // Diamond for major settlement
+            'port': '⚡', // Lightning for energy/transport hub
+            'outpost': '▲', // Triangle for small outpost
+            'base': '■', // Square for military base
+            'hub': '✦', // Star for connection hub
+            'fort': '⬟', // Hexagon for fortification
+            'colony': '◯', // Circle for colony
+            'default': '●'  // Filled circle for unknown
+        };
+        return symbols[type] || symbols.default;
     }
 
     createConnectionLines() {
@@ -353,7 +659,13 @@ class SphereGame {
         this.playerObject = new THREE.Mesh(geometry, material);
         this.playerObject.position.copy(position);
         this.playerObject.position.multiplyScalar(1.05);
-        this.playerObject.lookAt(new THREE.Vector3(0, 0, 0));
+        
+        // Fix rotation: align player to stand upright on planet surface (local up vector)
+        const localUp = this.playerObject.position.clone().normalize();
+        const quaternion = new THREE.Quaternion();
+        quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), localUp);
+        this.playerObject.setRotationFromQuaternion(quaternion);
+        
         this.playerObject.castShadow = true;
         
         this.scene.add(this.playerObject);
@@ -364,7 +676,9 @@ class SphereGame {
         if (this.selectedNode) {
             const prevNodeObj = this.nodeObjects.get(this.selectedNode);
             if (prevNodeObj) {
-                prevNodeObj.mesh.material.emissive.setHex(0x222222);
+                // Reset icon back to normal and hide label
+                this.updateIconSelection(prevNodeObj, false);
+                prevNodeObj.label.material.opacity = 0;
             }
         }
 
@@ -372,7 +686,9 @@ class SphereGame {
         this.selectedNode = nodeId;
         const nodeObj = this.nodeObjects.get(nodeId);
         if (nodeObj) {
-            nodeObj.mesh.material.emissive.setHex(0x444444);
+            // Highlight selected icon and show label
+            this.updateIconSelection(nodeObj, true);
+            nodeObj.label.material.opacity = 1;
             this.updateSelectedNodeInfo(nodeObj.node);
             
             // Enable/disable buttons based on selection
@@ -382,6 +698,46 @@ class SphereGame {
             findPathBtn.disabled = !this.currentPlayer;
             movePlayerBtn.disabled = !this.currentPlayer || !this.canMoveToNode(nodeId);
         }
+    }
+
+    updateIconSelection(nodeObj, isSelected) {
+        const node = nodeObj.node;
+        const type = node.properties.type || 'default';
+        const iconRadius = 0.04;
+        
+        // Create canvas for the icon with selection state
+        const canvas = document.createElement('canvas');
+        canvas.width = 128;
+        canvas.height = 128;
+        const context = canvas.getContext('2d');
+        
+        // Draw icon background circle
+        context.fillStyle = this.getIconColor(type);
+        context.beginPath();
+        context.arc(64, 64, 60, 0, 2 * Math.PI);
+        context.fill();
+        
+        // Draw border (thicker and different color if selected)
+        if (isSelected) {
+            context.strokeStyle = '#ffff00'; // Yellow for selection
+            context.lineWidth = 8;
+        } else {
+            context.strokeStyle = 'white';
+            context.lineWidth = 4;
+        }
+        context.stroke();
+        
+        // Draw icon symbol
+        context.fillStyle = 'white';
+        context.font = 'bold 40px Arial';
+        context.textAlign = 'center';
+        context.textBaseline = 'middle';
+        context.fillText(this.getIconSymbol(type), 64, 64);
+        
+        // Update the texture
+        const texture = new THREE.CanvasTexture(canvas);
+        nodeObj.mesh.material.map = texture;
+        nodeObj.mesh.material.needsUpdate = true;
     }
 
     canMoveToNode(nodeId) {
@@ -620,10 +976,53 @@ class SphereGame {
             nodeObj.label.lookAt(this.camera.position);
         });
         
-        // Rotate sphere slowly
-        if (this.sphere) {
-            this.sphere.rotation.y += 0.001;
+        // Animate dust clouds moving across planet surface
+        this.dustClouds.forEach(dustGroup => {
+            const userData = dustGroup.userData;
+            
+            // Rotate the dust cloud around the planet
+            const rotationMatrix = new THREE.Matrix4();
+            rotationMatrix.makeRotationAxis(userData.orbitAxis, userData.orbitSpeed);
+            dustGroup.position.applyMatrix4(rotationMatrix);
+            
+            // Update each particle orientation to stay aligned with planet surface
+            dustGroup.children.forEach((particle, index) => {
+                const particleWorldPos = dustGroup.position.clone().add(particle.position);
+                const localUp = particleWorldPos.normalize();
+                const quaternion = new THREE.Quaternion();
+                quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), localUp);
+                particle.setRotationFromQuaternion(quaternion);
+                
+                // Add slight rotation to individual particles
+                particle.rotation.z += 0.001 + index * 0.0001; // Much slower individual rotation
+            });
+        });
+        
+        // Animate moon orbit - much slower
+        if (this.moon) {
+            this.moonOrbitAngle += 0.0001;
+            const orbitRadius = 5;
+            this.moon.position.x = Math.cos(this.moonOrbitAngle) * orbitRadius;
+            this.moon.position.z = Math.sin(this.moonOrbitAngle) * orbitRadius;
+            this.moon.position.y = Math.sin(this.moonOrbitAngle * 0.5) * 0.5; // Slight vertical oscillation
+            
+            // Make moon rotate on its own axis - also slower
+            this.moon.rotation.y += 0.001;
         }
+        
+        // Animate sun orbit to simulate planet rotation
+        if (this.directionalLight && this.sun) {
+            this.sunOrbitAngle += 0.0005; // Very slow orbit to simulate day/night cycle
+            const sunOrbitRadius = 15;
+            this.directionalLight.position.x = Math.cos(this.sunOrbitAngle) * sunOrbitRadius;
+            this.directionalLight.position.z = Math.sin(this.sunOrbitAngle) * sunOrbitRadius;
+            this.directionalLight.position.y = Math.sin(this.sunOrbitAngle * 0.2) * 3; // Slight vertical movement
+            
+            // Update visual sun position to match light
+            this.sun.position.copy(this.directionalLight.position);
+        }
+        
+        // Planet is now stationary - no rotation
         
         this.renderer.render(this.scene, this.camera);
     }
